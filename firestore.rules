@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions for validation
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Task static shape validator
+    function isValidTask(task) {
+      return task.keys().hasAll(['id', 'title', 'status', 'createdAt', 'updatedAt'])
+        && task.keys().size() <= 8
+        && task.id is string
+        && task.id.size() <= 128
+        && task.title is string
+        && task.title.size() > 0
+        && task.title.size() <= 150
+        && task.status is string
+        && (task.status == 'backlog' || task.status == 'in_progress' || task.status == 'completed')
+        && (task.priority == null || task.priority == 'low' || task.priority == 'medium' || task.priority == 'high')
+        && (task.storyPoints == null || (task.storyPoints is number && task.storyPoints >= 0 && task.storyPoints <= 100))
+        && (task.description == null || (task.description is string && task.description.size() <= 1000));
+    }
+
+    // 2. Tasks collection rules
+    match /tasks/{taskId} {
+      // Validate the document ID
+      allow get: if isValidId(taskId);
+      // List rules check resource data to prevent scanning (Query Enforcer)
+      allow list: if resource == null || resource.data.ownerId == request.auth.uid;
+      
+      allow create: if (
+        isSignedIn() &&
+        isValidId(taskId) &&
+        request.resource.data.ownerId == request.auth.uid &&
+        isValidTask(request.resource.data) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time
+      );
+
+      allow update: if (
+        isSignedIn() &&
+        isValidId(taskId) &&
+        resource.data.ownerId == request.auth.uid &&
+        request.resource.data.ownerId == resource.data.ownerId &&
+        isValidTask(request.resource.data) &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedAt == request.time && (
+          // Action 1: Move Task Column (Status update)
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          // Action 2: Edit General Details
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'priority', 'storyPoints', 'updatedAt']))
+        )
+      );
+
+      allow delete: if (
+        isSignedIn() &&
+        isValidId(taskId) &&
+        resource.data.ownerId == request.auth.uid
+      );
+    }
+  }
+}
