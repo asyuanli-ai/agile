@@ -1,0 +1,6 @@
+{
+  "name": "Agile Project Manager",
+  "description": "An elegant Agile project management application featuring an interactive drag-and-drop Kanban board, a glossary tooltip component for agile concepts and financial metrics, and local storage fallback with Firebase support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
